@@ -91,8 +91,8 @@
     },
     {
         "Name":  "MSHTA events",
-        "Query":  "let Device = \u0027{DeviceId}\u0027;\r\nlet TimeFrame = {TimeFrame};\r\nlet Browsers = dynamic([\u0027Chrome.exe\u0027, \u0027Firefox.exe\u0027, \u0027msedge.exe\u0027, \u0027Brave.exe\u0027]);\r\nlet SuspiciousChildProcesses = dynamic([\u0027cmd.exe\u0027, \u0027powershell.exe\u0027, \u0027bash.exe\u0027, \u0027csscript.exe\u0027, \u0027mshta.exe\u0027, \u0027msiexec.exe\u0027, \u0027rundll32.exe\u0027]);\r\nDeviceProcessEvents\r\n| where Timestamp \u003e ago(TimeFrame)\r\n| where DeviceId =~ Device\r\n| where InitiatingProcessFileName =~ \u0027mshta.exe\u0027 or ProcessVersionInfoOriginalFileName  =~ \u0027mshta.exe\u0027\r\n| project  Timestamp, DeviceName, ProcessCommandLine, InitiatingProcessCommandLine, AccountUpn, ProcessVersionInfoOriginalFileName",
-        "Source":  "",
+        "Query":  "let Device = \u0027{DeviceId}\u0027;\r\nlet TimeFrame = {TimeFrame};\r\nDeviceProcessEvents\r\n| where Timestamp \u003e ago(TimeFrame)\r\n| where DeviceId =~ Device\r\n| where InitiatingProcessFileName =~ \u0027mshta.exe\u0027 or ProcessVersionInfoOriginalFileName  =~ \u0027mshta.exe\u0027\r\n| project  Timestamp, DeviceName, ProcessCommandLine, InitiatingProcessCommandLine, AccountUpn, ProcessVersionInfoOriginalFileName",
+        "Source":  "https://github.com/Bert-JanP/Hunting-Queries-Detection-Rules/blob/main/Defender%20For%20Endpoint/MshtaExecutions.md",
         "ResultCount":  0
     },
     {
