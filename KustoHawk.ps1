@@ -17,6 +17,11 @@
 .PARAMETER AuthenticationMethod
     The authentication method to use for Microsoft Graph API. Required. Must be one of: User, ServicePrincipalSecret, ServicePrincipalCertificate.
 
+.PARAMETER CertificateThumbprint
+    Optional certificate thumbprint used when -AuthenticationMethod ServicePrincipalCertificate is selected.
+    If not specified, the script uses $DefaultCertificateThumbprint from the service principal variables section.
+    The certificate must exist in Cert:\CurrentUser\My or Cert:\LocalMachine\My.
+
 .PARAMETER VerboseOutput
     [Switch] Enables verbose output to the terminal for detailed results.
 
@@ -56,6 +61,7 @@ param (
         [Parameter(Mandatory = $false)][Alias('v')][switch]$VerboseOutput,
         [Parameter(Mandatory = $false)][Alias('e')][switch]$Export,
         [Parameter(Mandatory = $false)][Alias('t')][string]$TimeFrame = "7d",
+        [Parameter(Mandatory = $false)][string]$CertificateThumbprint,
         [Parameter(Mandatory = $true)][ValidateSet("User", "ServicePrincipalSecret", "ServicePrincipalCertificate")][string]$AuthenticationMethod
     )
 
@@ -67,6 +73,7 @@ Import-Module Microsoft.Graph.Security
 $AppID = "<AppID>"
 $TenantID = "<TentantID>"
 $Secret = "<Secret>" #Certificate Authentication is recommended.
+$DefaultCertificateThumbprint = "2AFAC22579550A51D9F875E3B86A1420D1BFAC7D"
 $SecureClientSecret = ConvertTo-SecureString -String $Secret -AsPlainText -Force
 $ClientSecretCredential = New-Object -TypeName System.Management.Automation.PSCredential -ArgumentList $AppID, $SecureClientSecret
 
@@ -76,9 +83,26 @@ function Connect-GraphAPI-ServicePrincipalSecret {
 }
 
 function Connect-GraphAPI-ServicePrincipalCertificate {
-    Write-Host "Not implemented yet, select a different authentication mechanism." -ForegroundColor Red
-    #Write-Host "Connecting to Microsoft Graph API with AppId $AppID..." -ForegroundColor Cyan
-    #Connect-MgGraph -ClientId $AppID -TenantId $TenantId -CertificateThumbprint
+    $EffectiveThumbprint = if ([string]::IsNullOrWhiteSpace($CertificateThumbprint)) { $DefaultCertificateThumbprint } else { $CertificateThumbprint }
+
+    if ([string]::IsNullOrWhiteSpace($EffectiveThumbprint) -or $EffectiveThumbprint -like "<*>") {
+        Write-Host "Certificate authentication selected, but no valid thumbprint is configured." -ForegroundColor Red
+        Write-Host "Set -CertificateThumbprint or update the placeholder value in the script." -ForegroundColor Yellow
+        return
+    }
+
+    $cert = Get-Item -Path "Cert:\CurrentUser\My\$EffectiveThumbprint" -ErrorAction SilentlyContinue
+    if (-not $cert) {
+        $cert = Get-Item -Path "Cert:\LocalMachine\My\$EffectiveThumbprint" -ErrorAction SilentlyContinue
+    }
+
+    if (-not $cert) {
+        Write-Host "Certificate with thumbprint '$EffectiveThumbprint' was not found in CurrentUser or LocalMachine personal stores." -ForegroundColor Red
+        return
+    }
+
+    Write-Host "Connecting to Microsoft Graph API with AppId $AppID using certificate thumbprint $EffectiveThumbprint..." -ForegroundColor Cyan
+    Connect-MgGraph -ClientId $AppID -TenantId $TenantID -CertificateThumbprint $EffectiveThumbprint -NoWelcome
 }
 
 function Connect-GraphAPI-User {
@@ -523,7 +547,7 @@ $html += @"
     Write-Host "Report saved to $outFile"
 }
 
-$Version = '1.0.2'
+$Version = '2.0.0'
 $ASCIIBanner = @"
  _   __          _        _   _                _    
 | | / /         | |      | | | |              | |   
