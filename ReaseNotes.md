@@ -1,2 +1,3 @@
 - Certificate based Sign-Ins
 - Update queries
+- unpkg.com CDN delivery of tables

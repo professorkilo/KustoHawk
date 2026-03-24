@@ -1,25 +1,19 @@
 $Query = "let Upn = '{UserPrincipalName}';
 let TimeFrame = {TimeFrame};
-let SuspiciousUserAgents = externaldata(http_user_agent:string,metadata_description:string,metadata_tool:string,metadata_category:string,metadata_link:string,metadata_priority:string,metadata_fp_risk:string,metadata_severity:string,metadata_usage:string,metadata_flow_from_external:string,metadata_flow_from_internal:string,metadata_flow_to_internal:string,metadata_flow_to_external:string,metadata_for_successful_external_login_events:string,metadata_comment:string)['https://raw.githubusercontent.com/mthcht/awesome-lists/refs/heads/main/Lists/suspicious_http_user_agents_list.csv'] with (format='csv', ignoreFirstRecord=true);
-let UserAgentsOfInterest = SuspiciousUserAgents
-| where metadata_category in~ ('Credential Access',
-    'Phishing',
-    'phishing',
-    'Reconnaissance',
-    'Exploit',
-    'Exploitation',
-    'Exploitation tool',
-    'Defense Evasion',
-    'POST Exploitation',
-    'Bots & Vulnerability Scanner',
-    'uncommun user agent')
-| extend StandardizedUserAgent = replace_string(http_user_agent, '*', '')
-| distinct StandardizedUserAgent;
-EntraIdSignInEvents
+CloudAppEvents
 | where Timestamp > ago(TimeFrame)
-| where AccountUpn =~ Upn
-| where ErrorCode == 0
-| where UserAgent has_any (UserAgentsOfInterest)
-| project-reorder TimeGenerated, Upn, UserAgent, ErrorCode, SessionId"
+| where RawEventData.UserId =~ Upn
+| where Application == 'Microsoft Exchange Online'
+| where ActionType == 'New-InboxRule'
+| mv-apply p=todynamic(ActivityObjects) on 
+(
+where p.Name == 'Name'
+| extend RuleName=p.Value
+)
+| where isnotempty(RuleName)
+| where RuleName matches regex @'^[^a-zA-Z0-9]*$'
+| extend AccountUpn=tostring(RawEventData.UserId)
+| extend SessionId=tostring(RawEventData.SessionId)
+| project Timestamp, Application, ActionType, AccountUpn, RuleName, SessionId, IPAddress"
 $Output = $Query -replace '\r','\r' -replace '\n','\n'
 Write-Output $Output

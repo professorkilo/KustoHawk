@@ -28,6 +28,9 @@
 .PARAMETER Export
     [Switch] Exports query results to CSV files.
 
+.PARAMETER IncludeSampleSet
+    [Switch] Adds a sample set of up to 10 rows per query to the generated HTML report.
+
 .PARAMETER TimeFrame
     The time range for KQL queries (e.g., "7d", "14d", "24h"). Optional. Default is "7d".
 
@@ -42,6 +45,10 @@
 .EXAMPLE
     Run triage for both a device and a user:
     .\KustoHawk.ps1 -DeviceId 2694a7cc2225f3b66f7cf8b6388a78b1857fadca -upn user@contoso.com -AuthenticationMethod User -TimeFrame 7d -v
+
+.EXAMPLE
+    Include up to 10 sample rows per query in the HTML report:
+    .\KustoHawk.ps1 -DeviceId 2694a7cc2225f3b66f7cf8b6388a78b1857fadca -AuthenticationMethod User -IncludeSampleSet
 
 .LINK
     https://github.com/Bert-JanP/KustoHawk
@@ -60,6 +67,7 @@ param (
         [Parameter(Mandatory=$false)][Alias('upn')][string]$UserPrincipalName,
         [Parameter(Mandatory = $false)][Alias('v')][switch]$VerboseOutput,
         [Parameter(Mandatory = $false)][Alias('e')][switch]$Export,
+        [Parameter(Mandatory = $false)][Alias('s')][switch]$IncludeSampleSet,
         [Parameter(Mandatory = $false)][Alias('t')][string]$TimeFrame = "7d",
         [Parameter(Mandatory = $false)][string]$CertificateThumbprint,
         [Parameter(Mandatory = $true)][ValidateSet("User", "ServicePrincipalSecret", "ServicePrincipalCertificate")][string]$AuthenticationMethod
@@ -163,7 +171,8 @@ function RunKQLQuery {
         [bool]$WriteResultsToTerminal,
         [bool]$ExportResults,
         [string]$FileName,
-        [string]$TimeFrame
+        [string]$TimeFrame,
+        [bool]$IncludeSampleSet
     )
     $params = @{
         Query = $Query
@@ -196,8 +205,15 @@ function RunKQLQuery {
         $ExportName = $FileName + ".csv"
         $table | Export-CSV .\$ExportName -NoTypeInformation
     }
+
+    $sampleRows = @()
+    if ($IncludeSampleSet) {
+        $sampleRows = @($table | Select-Object -First 10)
+    }
+
     return @{
         ResultCount = $table.count
+        SampleRows = $sampleRows
     }
 
 }
@@ -291,21 +307,24 @@ function RunQueriesFromFile {
     param (
         [string]$FileName,
         [string]$DeviceId,
-        [string]$UserPrincipalName
+        [string]$UserPrincipalName,
+        [bool]$IncludeSampleSet
     )
     # Load the queries from the JSON file
     $KQLQueries = Get-Content -Raw -Path $FileName | ConvertFrom-Json
 
     foreach ($q in $KQLQueries) {
         $queryText = $q.Query -replace '\{DeviceId\}', $DeviceId -replace '\{TimeFrame\}', $TimeFrame -replace '\{UserPrincipalName\}', $UserPrincipalName
-        $Results = RunKQLQuery -Query $queryText -WriteResultsToTerminal $VerboseOutput -ExportResults $Export -FileName $q.Name
+        $Results = RunKQLQuery -Query $queryText -WriteResultsToTerminal $VerboseOutput -ExportResults $Export -FileName $q.Name -IncludeSampleSet $IncludeSampleSet
 
         # Ensure ResultCount property is added/updated on the query object
         if ($null -ne $q.PSObject) {
             $q | Add-Member -NotePropertyName ResultCount -NotePropertyValue $Results.ResultCount -Force
+            $q | Add-Member -NotePropertyName SampleResults -NotePropertyValue @($Results.SampleRows) -Force
         } else {
             # Fallback: create property directly
             $q.ResultCount = $Results.ResultCount
+            $q.SampleResults = @($Results.SampleRows)
         }
 
         if ($Results.ResultCount -eq 0){
@@ -319,21 +338,30 @@ function RunQueriesFromFile {
 
     # Write the updated JSON back to the same file (no backup)
     try {
+        $persistQueries = $KQLQueries | Select-Object * -ExcludeProperty SampleResults
         # Convert updated object back to JSON. Increase depth in case Query objects contain nested structures.
-        $jsonOut = $KQLQueries | ConvertTo-Json -Depth 10
+        $jsonOut = $persistQueries | ConvertTo-Json -Depth 10
         $jsonOut | Set-Content -Path $FileName -Encoding UTF8
         Write-Host "Updated '$FileName' with ResultCount values." -ForegroundColor Cyan
     } catch {
         Write-Warning "Failed to write updated queries back to '$FileName': $_"
     }
+
+    return $KQLQueries
 }
 
 function GenerateQueryReport {
     param (
         [string]$FileName,
-        [string]$QueryType
+        [string]$QueryType,
+        [bool]$IncludeSampleSet,
+        [object[]]$QueryData
     )
-    $KQLQueries = Get-Content -Raw -Path ".\$FileName" | ConvertFrom-Json
+    if ($null -ne $QueryData -and $QueryData.Count -gt 0) {
+        $KQLQueries = $QueryData
+    } else {
+        $KQLQueries = Get-Content -Raw -Path ".\$FileName" | ConvertFrom-Json
+    }
     switch($QueryType) {
             'Device' {
         $Entity = $DeviceId
@@ -357,103 +385,173 @@ function GenerateQueryReport {
     <title>Executed Queries Report</title>
     <meta name='viewport' content='width=device-width, initial-scale=1'>
     <style>
+        :root {
+            --neutral-bg-1: #ffffff;
+            --neutral-bg-2: #faf9f8;
+            --neutral-bg-3: #f3f2f1;
+            --neutral-stroke-1: #edebe9;
+            --neutral-stroke-2: #e1dfdd;
+            --neutral-foreground-1: #242424;
+            --neutral-foreground-2: #605e5c;
+            --brand-foreground-1: #0f6cbd;
+            --brand-bg-1: #0f6cbd;
+            --brand-bg-2: #deecf9;
+        }
         body {
             font-family: 'Segoe UI', 'Arial', sans-serif;
-            background: #f3f6fa;
+            background: linear-gradient(180deg, #f6f8fb 0%, #eef2f7 100%);
             margin: 0;
             padding: 0;
+            color: var(--neutral-foreground-1);
         }
         .container {
             max-width: 1200px;
             margin: 40px auto 0 auto;
-            background: #fff;
-            border-radius: 18px;
-            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.12);
+            background: var(--neutral-bg-1);
+            border-radius: 12px;
+            border: 1px solid var(--neutral-stroke-1);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.06);
             padding: 32px;
             min-height: 70vh;
         }
         h1 {
             text-align: center;
-            color: #2c3e50;
+            color: var(--neutral-foreground-1);
             margin-top: 0;
             margin-bottom: 32px;
             font-size: 2.1em;
             letter-spacing: 1px;
         }
-        table {
+
+        .report-table {
             width: 100%;
-            border-collapse: collapse;
-            background: #f8faff;
+            border-collapse: separate;
+            border-spacing: 0;
+            background: var(--neutral-bg-1);
+            border: 1px solid var(--neutral-stroke-1);
             border-radius: 8px;
             overflow: hidden;
-            box-shadow: 0 2px 8px rgba(44,62,80,.05);
             table-layout: fixed;
         }
-        th, td {
-            padding: 14px 12px;
+
+        .report-table thead th {
+            background: var(--neutral-bg-3);
+            color: var(--neutral-foreground-1);
+            border-bottom: 1px solid var(--neutral-stroke-2);
             text-align: left;
-            border-bottom: 1px solid #e1e8ed;
-            vertical-align: top;
-        }
-        th {
-            background: #eaf0fa;
-            color: #34495e;
-            font-size: 1.05em;
             font-weight: 600;
-            letter-spacing: .5px;
-        }
-        tr:hover {
-            background: #f0f5fc;
+            font-size: 0.95rem;
+            padding: 12px;
         }
 
-        /* Column widths: Name 25%, Query 55%, Hits 10%, Source 10% */
-        th.name, td.name { width: 25%; }
-        th.query, td.query { width: 55%; }
-        th.hits, td.hits { width: 10%; text-align: center; }
-        th.source, td.source { width: 10%; }
+        .report-table tbody td {
+            border-bottom: 1px solid var(--neutral-stroke-1);
+            padding: 12px;
+            vertical-align: top;
+            color: var(--neutral-foreground-1);
+        }
 
-        /* Query code block */
-        td pre {
-            background: #23272e;
-            color: #f5f8fa;
-            font-size: 0.95em;
-            padding: 14px;
+        .report-table tbody tr.query-row:hover {
+            background: var(--neutral-bg-2);
+        }
+
+        .col-name { width: 24%; }
+        .col-query { width: 46%; }
+        .col-hits { width: 10%; text-align: center; }
+        .col-source { width: 20%; }
+
+        .cell-name,
+        .cell-source {
+            word-break: break-word;
+        }
+
+        .query-pre {
+            background: #111827;
+            color: #f9fafb;
+            font-size: 0.92em;
+            padding: 12px;
             border-radius: 6px;
             margin: 0;
-            max-width: 100%;
             overflow-x: auto;
             white-space: pre-wrap;
-            word-break: break-all;
-            max-height: 320px;
+            max-height: 280px;
         }
 
-        /* Hits badge */
-        .badge {
-            display: inline-block;
-            min-width: 40px;
-            padding: 6px 10px;
-            font-weight: 700;
-            font-size: 0.95em;
-            color: #fff;
-            background: #0077cc;
-            border-radius: 999px;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+        .cell-hits {
+            text-align: center;
         }
-        .badge.zero {
-            background: #7f8c8d;
-            color: #fff;
-            opacity: 0.95;
+
+        .hits-pill {
+            display: inline-block;
+            min-width: 28px;
+            padding: 3px 10px;
+            border-radius: 999px;
+            font-weight: 700;
+            font-size: 0.86rem;
+            color: #ffffff;
+            background: var(--brand-bg-1);
+        }
+
+        .hits-pill.zero {
+            background: #8a8886;
+        }
+
+        .sample-row td {
+            background: var(--neutral-bg-2);
+            border-bottom: 1px solid var(--neutral-stroke-1);
+        }
+
+        .sample-details {
+            margin-top: 2px;
+        }
+
+        .sample-details summary {
+            cursor: pointer;
+            color: var(--brand-foreground-1);
+            font-weight: 600;
+            padding: 4px 0;
+        }
+
+        .sample-json {
+            margin: 8px 0 0 0;
+            padding: 10px;
+            background: #ffffff;
+            border: 1px solid var(--neutral-stroke-2);
+            border-radius: 6px;
+            overflow: auto;
+            max-height: 320px;
+            white-space: pre-wrap;
+            word-break: break-word;
+            font-size: 0.9em;
+        }
+
+        .sample-empty {
+            margin-top: 8px;
+            color: var(--neutral-foreground-2);
+            font-size: 0.92em;
         }
 
         @media (max-width: 900px) {
             .container { padding: 16px; }
-            th.name, td.name { width: 100%; display:block; }
-            th.query, td.query { width: 100%; display:block; }
-            th.hits, td.hits { width: 100%; display:block; text-align:left; margin-top:8px; }
-            th.source, td.source { width: 100%; display:block; margin-top:8px; }
-            table, thead, tbody, th, td, tr { display: block; }
-            td pre { max-height: 280px; }
-            tr { margin-bottom: 18px; }
+            .report-table,
+            .report-table thead,
+            .report-table tbody,
+            .report-table tr,
+            .report-table th,
+            .report-table td {
+                display: block;
+                width: 100%;
+            }
+            .report-table thead { display: none; }
+            .report-table tbody td { border-bottom: none; padding: 10px 12px; }
+            .report-table tbody tr.query-row,
+            .report-table tbody tr.sample-row {
+                border-bottom: 1px solid var(--neutral-stroke-1);
+                padding-bottom: 8px;
+                margin-bottom: 8px;
+            }
+            .cell-hits { text-align: left; }
+            .query-pre { max-height: 220px; }
         }
         .footer {
             text-align: center;
@@ -478,34 +576,49 @@ function GenerateQueryReport {
 <body>
     <div class='container'>
         <h1>Executed Queries ($QueryType - $Entity)</h1>
-        <table>
+        <table class='report-table' aria-label='Executed queries'>
             <thead>
                 <tr>
-                    <th class='name'>Name</th>
-                    <th class='query'>Query</th>
-                    <th class='hits'>Hits</th>
-                    <th class='source'>Source</th>
+                    <th class='col-name'>Name</th>
+                    <th class='col-query'>Query</th>
+                    <th class='col-hits'>Hits</th>
+                    <th class='col-source'>Source</th>
                 </tr>
             </thead>
             <tbody>
 "@
 
     foreach ($q in $KQLQueries) {
-        $queryText = $q.Query -replace '<', '&lt;' -replace '>', '&gt;' -replace '\{DeviceId\}', $DeviceId -replace '\{TimeFrame\}', $TimeFrame -replace '\{UserPrincipalName\}', $UserPrincipalName
+        $queryText = $q.Query -replace '\{DeviceId\}', $DeviceId -replace '\{TimeFrame\}', $TimeFrame -replace '\{UserPrincipalName\}', $UserPrincipalName
         $name = [System.Web.HttpUtility]::HtmlEncode($q.Name)
+        $queryRendered = [System.Web.HttpUtility]::HtmlEncode($queryText)
         $hits = if ($q.PSObject.Properties.Match('ResultCount')) { $q.ResultCount } else { 0 }
         $source = $q.Source
         $sourceLink = if ($source -match '^https?://') {
-            "<a href='$source' target='_blank' rel='noopener noreferrer'>Query Link</a>"
+            $sourceUrl = [System.Web.HttpUtility]::HtmlEncode($source)
+            "<a href='$sourceUrl' target='_blank' rel='noopener noreferrer'>Query Link</a>"
         } else {
             [System.Web.HttpUtility]::HtmlEncode($source)
         }
 
-        # Choose badge class for styling zero vs non-zero
-        $badgeClass = if ($hits -eq 0) { 'badge zero' } else { 'badge' }
+        $hitsClass = if ($hits -eq 0) { 'hits-pill zero' } else { 'hits-pill' }
+        $html += "<tr class='query-row'><td class='cell-name'>$name</td><td><pre class='query-pre'>$queryRendered</pre></td><td class='cell-hits'><span class='$hitsClass'>$hits</span></td><td class='cell-source'>$sourceLink</td></tr>`n"
 
-        # Add each row. Hits are shown as a pill/badge (no <pre>).
-        $html += "<tr><td class='name'>$name</td><td class='query'><pre>$queryText</pre></td><td class='hits'><span class='$badgeClass'>$hits</span></td><td class='source'>$sourceLink</td></tr>`n"
+        if ($IncludeSampleSet) {
+            $sampleRows = @()
+            if ($q.PSObject.Properties.Match('SampleResults')) {
+                $sampleRows = @($q.SampleResults)
+            }
+
+            if ($sampleRows.Count -gt 0) {
+                $sampleJson = [System.Web.HttpUtility]::HtmlEncode(($sampleRows | ConvertTo-Json -Depth 8))
+                $sampleBody = "<pre class='sample-json'>$sampleJson</pre>"
+            } else {
+                $sampleBody = "<div class='sample-empty'>No sample rows available.</div>"
+            }
+
+            $html += "<tr class='sample-row'><td colspan='4'><details class='sample-details'><summary>View sample results (max 10)</summary>$sampleBody</details></td></tr>`n"
+        }
     }
 
 $html += @"
@@ -577,14 +690,14 @@ if ($DeviceId){
     $count = $json.Count
     Write-Host "Starting $count triage queries for $DeviceId" -ForegroundColor Cyan
     Write-Host "=====================================" -ForegroundColor Cyan
-    RunQueriesFromFile .\Resources\DeviceQueries.json  $info.DeviceId $info.UserPrincipalName
-    GenerateQueryReport .\Resources\DeviceQueries.json Device
+    $deviceQueryResults = RunQueriesFromFile .\Resources\DeviceQueries.json  $info.DeviceId $info.UserPrincipalName $IncludeSampleSet
+    GenerateQueryReport .\Resources\DeviceQueries.json Device $IncludeSampleSet $deviceQueryResults
 }
 if ($UserPrincipalName){
     $json = Get-Content -Raw -Path '.\Resources\IdentityQueries.json' | ConvertFrom-Json
     $count = $json.Count
     Write-Host "Starting $count traige queries for $UserPrincipalName" -ForegroundColor Cyan
     Write-Host "=====================================" -ForegroundColor Cyan
-    RunQueriesFromFile .\Resources\IdentityQueries.json  $info.DeviceId $info.UserPrincipalName
-    GenerateQueryReport .\Resources\IdentityQueries.json Identity
+    $identityQueryResults = RunQueriesFromFile .\Resources\IdentityQueries.json  $info.DeviceId $info.UserPrincipalName $IncludeSampleSet
+    GenerateQueryReport .\Resources\IdentityQueries.json Identity $IncludeSampleSet $identityQueryResults
 }
