@@ -434,9 +434,17 @@ function RunQueriesFromFile {
     return $KQLQueries
 }
 
+function Get-LogoBase64 {
+    $logoPath = Join-Path -Path $PSScriptRoot -ChildPath 'Logo-NoBackground.png'
+    if (Test-Path $logoPath) {
+        return [Convert]::ToBase64String([System.IO.File]::ReadAllBytes($logoPath))
+    }
+    return $null
+}
+
 function GetReportFooterHtml {
     return @"
-    <div class='footer' style='padding:12px 16px; text-align:center; font-size:0.9rem; color:#444;'>
+    <div class='footer'>
         &copy; 2025 <span class='trademark'>Bert-Jan Pals &trade;</span> — All rights reserved.
         <div class='social' style='margin-top:8px; display:inline-flex; gap:12px; align-items:center;'>
             <a href='https://github.com/bert-janp' target='_blank' rel='noopener noreferrer' aria-label='GitHub' title='GitHub' style='color:inherit; text-decoration:none;'>
@@ -466,6 +474,9 @@ function GenerateQueryReport {
         [bool]$IncludeSampleSet,
         [object[]]$QueryData
     )
+    $logoBase64 = Get-LogoBase64
+    $logoImgHtml = if ($logoBase64) { "<img class='header-logo' src='data:image/png;base64,$logoBase64' alt='KustoHawk' />" } else { "" }
+
     if ($null -ne $QueryData -and $QueryData.Count -gt 0) {
         $KQLQueries = $QueryData
     } else {
@@ -593,15 +604,20 @@ function GenerateQueryReport {
             font-size: 2.1em;
             letter-spacing: 1px;
         }
-        .report-table {
+        .report-table-wrap {
             width: 100%;
+            overflow-x: auto;
+            border: 1px solid var(--neutral-stroke-1);
+            border-radius: 8px;
+            background: var(--neutral-bg-1);
+        }
+        .report-table {
+            width: max-content;
+            min-width: 100%;
             border-collapse: separate;
             border-spacing: 0;
             background: var(--neutral-bg-1);
-            border: 1px solid var(--neutral-stroke-1);
-            border-radius: 8px;
-            overflow: hidden;
-            table-layout: fixed;
+            table-layout: auto;
         }
         .report-table thead th {
             background: var(--neutral-bg-3);
@@ -621,10 +637,10 @@ function GenerateQueryReport {
         .report-table tbody tr.query-row:hover {
             background: var(--neutral-bg-2);
         }
-        .col-name { width: 24%; }
-        .col-query { width: 54%; }
-        .col-hits { width: 10%; text-align: center; }
-        .col-source { width: 12%; }
+        .col-name { min-width: 220px; }
+        .col-query { min-width: 560px; }
+        .col-hits { min-width: 90px; text-align: center; white-space: nowrap; }
+        .col-source { min-width: 180px; }
         .sort-button {
             border: none;
             background: transparent;
@@ -757,24 +773,6 @@ function GenerateQueryReport {
         }
         @media (max-width: 900px) {
             .container { padding: 16px; }
-            .report-table,
-            .report-table thead,
-            .report-table tbody,
-            .report-table tr,
-            .report-table th,
-            .report-table td {
-                display: block;
-                width: 100%;
-            }
-            .report-table thead { display: none; }
-            .report-table tbody td { border-bottom: none; padding: 10px 12px; }
-            .report-table tbody tr.query-row,
-            .report-table tbody tr.sample-row {
-                border-bottom: 1px solid var(--neutral-stroke-1);
-                padding-bottom: 8px;
-                margin-bottom: 8px;
-            }
-            .cell-hits { text-align: left; }
             .query-pre { max-height: 220px; }
             .copy-query-button {
                 top: 6px;
@@ -785,7 +783,7 @@ function GenerateQueryReport {
             text-align: center;
             color: #8d99ae;
             font-size: 1em;
-            padding: 18px 0 12px 0;
+            padding: 12px 16px;
             margin-top: 24px;
             background: #eaf0fa;
             border-top: 1px solid #d4dbe7;
@@ -793,18 +791,63 @@ function GenerateQueryReport {
             letter-spacing: 0.5px;
             font-family: 'Segoe UI', 'Arial', sans-serif;
         }
+        .header-brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .header-logo {
+            height: 32px;
+            width: auto;
+        }
         a {
             color: #0077cc;
             text-decoration: none;
             font-weight: 500;
         }
         a:hover { text-decoration: underline; color: #005fa3; }
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --neutral-bg-1: #1e2231;
+                --neutral-bg-2: #252a3a;
+                --neutral-bg-3: #2d3347;
+                --neutral-stroke-1: #3a4055;
+                --neutral-stroke-2: #454d66;
+                --neutral-foreground-1: #e8eaf0;
+                --neutral-foreground-2: #9ca3af;
+                --brand-foreground-1: #4da3e8;
+                --brand-bg-1: #0f6cbd;
+                --brand-bg-2: #1a3556;
+            }
+            body {
+                background: linear-gradient(180deg, #141824 0%, #1a2030 100%);
+            }
+            .page-header {
+                background: rgba(20, 24, 36, 0.95);
+            }
+            .nav-link {
+                background: var(--neutral-bg-2);
+            }
+            .sample-table-wrap {
+                background: var(--neutral-bg-2);
+            }
+            .sample-table thead th {
+                background: var(--neutral-bg-3);
+            }
+            .footer {
+                background: #1a2030;
+                border-top-color: #3a4055;
+                color: #8d99ae;
+            }
+            a { color: #4da3e8; }
+            a:hover { color: #76c0f5; }
+        }
     </style>
 </head>
 <body>
     <header class='page-header'>
         <div class='header-inner'>
-            <div class='header-title'>KustoHawk Report</div>
+            <div class='header-brand'>$logoImgHtml<span class='header-title'>KustoHawk Report</span></div>
             <nav class='nav-links' aria-label='Report navigation'>
                 $mainNav
                 $deviceNav
@@ -814,6 +857,7 @@ function GenerateQueryReport {
     </header>
     <div class='container'>
         <h1>Executed Queries ($pageLabel - $Entity)</h1>
+        <div class='report-table-wrap'>
         <table class='report-table' aria-label='Executed queries'>
             <thead>
                 <tr>
@@ -903,6 +947,7 @@ function GenerateQueryReport {
 $html += @"
             </tbody>
         </table>
+        </div>
     </div>
     <script>
         (function() {
@@ -939,6 +984,7 @@ $html += @"
 
             if (sortButton && tableBody) {
                 sortButton.addEventListener('click', sortRowsByHits);
+                sortRowsByHits();
             }
 
             const copyButtons = document.querySelectorAll('.copy-query-button');
@@ -989,6 +1035,9 @@ function GenerateMainReportPage {
            [object[]]$DeviceAlerts,
            [object[]]$IdentityAlerts
     )
+
+    $logoBase64 = Get-LogoBase64
+    $logoImgHtml = if ($logoBase64) { "<img class='header-logo' src='data:image/png;base64,$logoBase64' alt='KustoHawk' />" } else { "" }
 
     $outputDir = Join-Path -Path (Get-Location) -ChildPath 'Reports'
     if (-not (Test-Path -Path $outputDir)) {
@@ -1066,7 +1115,23 @@ function GenerateMainReportPage {
             $alertsById[$id].EntityType = 'Both'
         }
     }
-    $uniqueAlerts = @($alertsById.Values) | Sort-Object Timestamp -Descending
+    $severityRank = @{
+        'high' = 0
+        'medium' = 1
+        'low' = 2
+        'informational' = 3
+    }
+
+    $uniqueAlerts = @($alertsById.Values) | Sort-Object `
+        @{ Expression = {
+            $sev = if ($_.Severity) { $_.Severity.ToString().ToLower() } else { 'informational' }
+            if ($severityRank.ContainsKey($sev)) { $severityRank[$sev] } else { 3 }
+        } }, `
+        @{ Expression = {
+            $parsedTimestamp = [datetime]::MinValue
+            [void][datetime]::TryParse("$($_.Timestamp)", [ref]$parsedTimestamp)
+            $parsedTimestamp
+        }; Descending = $true }
 
     if ($uniqueAlerts.Count -gt 0) {
         $alertRowsHtml = ''
@@ -1084,9 +1149,9 @@ function GenerateMainReportPage {
             $entLabel   = [System.Web.HttpUtility]::HtmlEncode($entityType)
             $alertRowsHtml += "<tr><td>$ts</td><td><a href='$alertUrl' target='_blank' rel='noopener noreferrer'>$title</a></td><td><span class='$sevClass'>$sevLabel</span></td><td>$category</td><td>$source</td><td><span class='$badgeClass'>$entLabel</span></td></tr>"
         }
-        $alertsHtml = "<article class='card alerts-card'><h2>Active Alerts <span style='font-size:0.9rem;font-weight:500;color:#6b7280;'>($($uniqueAlerts.Count) in last 30 days)</span></h2><div class='alerts-table-wrap'><table class='alerts-table'><thead><tr><th>Timestamp</th><th>Title</th><th>Severity</th><th>Category</th><th>Service Source</th><th>Entity</th></tr></thead><tbody>$alertRowsHtml</tbody></table></div></article>"
+        $alertsHtml = "<article class='card alerts-card'><h2>Alerts <span style='font-size:0.9rem;font-weight:500;color:#6b7280;'>($($uniqueAlerts.Count) in last 30 days)</span></h2><div class='alerts-table-wrap'><table class='alerts-table'><thead><tr><th>Timestamp</th><th>Title</th><th>Severity</th><th>Category</th><th>Service Source</th><th>Entity</th></tr></thead><tbody>$alertRowsHtml</tbody></table></div></article>"
     } else {
-        $alertsHtml = "<article class='card alerts-card'><h2>Active Alerts</h2><div class='no-alerts'>No alerts found for this entity in the last 30 days.</div></article>"
+        $alertsHtml = "<article class='card alerts-card'><h2>Alerts</h2><div class='no-alerts'>No alerts found for this entity in the last 30 days.</div></article>"
     }
 
     $mainHtml = @"
@@ -1280,12 +1345,70 @@ function GenerateMainReportPage {
             .badge-user   { background: #7c3aed; color: #fff; border-radius: 999px; padding: 2px 8px; font-size: 0.8rem; font-weight: 600; }
             .badge-both   { background: #0f766e; color: #fff; border-radius: 999px; padding: 2px 8px; font-size: 0.8rem; font-weight: 600; }
             .no-alerts { color: var(--muted); font-size: 0.95rem; padding: 8px 0; }
+        .header-brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .header-logo {
+            height: 32px;
+            width: auto;
+        }
+        .footer {
+            text-align: center;
+            color: #8d99ae;
+            font-size: 1em;
+            padding: 12px 16px;
+            margin-top: 24px;
+            background: #eaf0fa;
+            border-top: 1px solid #d4dbe7;
+            letter-spacing: 0.5px;
+            font-family: 'Segoe UI', 'Arial', sans-serif;
+        }
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: #141824;
+                --surface: #1e2231;
+                --text: #e8eaf0;
+                --muted: #9ca3af;
+                --brand: #4da3e8;
+                --stroke: #3a4055;
+            }
+            body {
+                background: linear-gradient(180deg, #141824 0%, #1a2030 100%);
+            }
+            .page-header {
+                background: rgba(20, 24, 36, 0.95);
+            }
+            .nav-link {
+                background: var(--surface);
+            }
+            .meta { color: #cbd5e1; }
+            .pie-center {
+                background: var(--surface);
+                color: var(--text);
+            }
+            .pie-chart {
+                box-shadow: inset 0 0 0 1px var(--stroke);
+            }
+            .alerts-table thead th {
+                background: #252a3a;
+            }
+            .alerts-table tbody tr:hover {
+                background: #252a3a;
+            }
+            .footer {
+                background: #1a2030;
+                border-top-color: #3a4055;
+                color: #8d99ae;
+            }
+        }
         </style>
 </head>
 <body>
     <header class='page-header'>
         <div class='header-inner'>
-            <div class='header-title'>KustoHawk Report</div>
+            <div class='header-brand'>$logoImgHtml<span class='header-title'>KustoHawk Report</span></div>
             <nav class='nav-links' aria-label='Report navigation'>
                 <a class='nav-link active' href='index.html'>Main</a>
                 $(if ($devicePageFile) { "<a class='nav-link' href='$devicePageFile'>Device</a>" } else { "<span class='nav-link disabled'>Device</span>" })
