@@ -80,7 +80,7 @@ Get-Help .\KustoHawk.ps1
 .\KustoHawk.ps1 -DeviceId 2694a7cc2225f3b66f7cf8b6388a78b1857fadca -AuthenticationMethod User -TimeFrame 14d -e -AuthenticationTier Tier1
 ```
 
-**Example 3: Collecting Idenity informationn with sample results and authentication methods (tier2) with a set timeframe of 14 days**
+**Example 3: Collecting Idenity information with sample results and authentication methods (tier2) with a set timeframe of 14 days**
 
 ```PowerShell
 .\KustoHawk.ps1 -upn bert-jan@kqlquery.com -AuthenticationTier Tier2 -TimeFrame 14d -IncludeSampleSet -AuthenticationMethod User
@@ -89,7 +89,7 @@ Get-Help .\KustoHawk.ps1
 ## Table Requirements
 Missing tables do not break KustoHawk, but fewer detections are returned.
 
-### Device Traige
+### Device Triage
 - Unified Security Platform Alerts (AlertEvidence, AlertInfo) 
 - Defender For Endpoint (DeviceFileEvents, DeviceEvents, DeviceTvmSoftwareVulnerabilities, DeviceRegistryEvents, DeviceNetworkEvents, DeviceProcessEvents, DeviceInfo)
 
