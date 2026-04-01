@@ -1,11 +1,11 @@
 # KustoHawk 🦅
 
-KustoHawk is a incident triage and response tool for Microsoft Defender XDR and Sentinel environments. The script collects common indicators of compromise and returns a complete picture of the activities performed by an device of account. The tool leverages Graph API to run the hunting queries across your unified XDR environment. The queries that are executed are listed in the [Resources](./Resources/) folder. The script only outputs hits, but with verbose (-v) or export (-e) mode enabled the results are shown on the terminal or exported to CSV files for further investigation.
+KustoHawk is an incident triage and response tool for Microsoft Defender XDR and Microsoft Sentinel environments. The script collects common indicators of compromise and returns a complete picture of the activities performed by an device of account. The tool leverages Graph API to run the hunting queries across your unified XDR environment. Bases on a [tiering permission](#authentication-tiers-and-permissions) model additional data can be collected via Graph API calls. The queries that are executed are listed in the [Resources](./Resources/) folder.
 
-![Alt text](./Images/ExampleOutputDevice.png)
+![Alt text](./Images/Logo-NoBackground.png)
 
 ## Architecture
-KustoHawk is based on the [KustoHawk.ps1](./KustoHawk.ps1) PowerShell script that connects to the Graph API to run hunting queries. The output is shared in the commandline and presented in HTML exports.
+KustoHawk is based on the [KustoHawk.ps1](./KustoHawk.ps1) PowerShell script that connects to the Graph API to run hunting queries and collect relevant data. The output is shared in the commandline and presented in HTML exports.
 
 ![Alt text](./Images/KustoHawk.png)
 
@@ -14,49 +14,80 @@ The script supports multiple authentication options to connect the script to the
 
 - User
 - ServicePrincipalSecret
-- ServicePrincipalCertificate (implementation in development)
+- ServicePrincipalCertificate
 
 By default the data from the last 7 days is collected, this can be adjusted using the *[-TimeFrame] <String>* parameter.
 
-### Permissions
-The script required ThreatHunting.Read.All permissions to execute the [runHuntingQuery](https://learn.microsoft.com/en-us/graph/api/security-security-runhuntingquery?view=graph-rest-1.0&tabs=http) Graph API calls.
+### Authentication Tiers And Permissions
+
+Tiers are defined in [Resources/AuthenticationTiers.yaml](./Resources/AuthenticationTiers.yaml).
+
+| Tier | Permissions |
+| --- | --- |
+| Tier1 | `ThreatHunting.Read.All` |
+| Tier2 | `ThreatHunting.Read.All`, `UserAuthenticationMethod.Read.All` |
+| Tier3 | `ThreatHunting.Read.All`, `UserAuthenticationMethod.Read.All` |
+
+- Minimum required permission is `ThreatHunting.Read.All`.
+- If the requested tier cannot be met, KustoHawk attempts a lower tier automatically.
 
 ### Prerequisites
-The script requires the Microsoft.Graph.Security to run queries.
+KustoHawk requires the Microsoft Graph Security PowerShell module:
 
-```PowerShell
+```powershell
 Install-Module Microsoft.Graph.Security
 ```
 
 ### Parameters
 
-```Powershell
-KustoHawk.ps1 [[-DeviceId] <String>] [[-UserPrincipalName] <String>] [-VerboseOutput] [-Export] 
-    [[-TimeFrame] <String>] [-AuthenticationMethod] <String> [<CommonParameters>]
+```powershell
+KustoHawk.ps1 [[-DeviceId] <String>] [[-UserPrincipalName] <String>] [-VerboseOutput] [-Export]
+        [-IncludeSampleSet] [[-TimeFrame] <String>] [[-CertificateThumbprint] <String>]
+        [[-AuthenticationTier] <String>] [-AuthenticationMethod] <String> [<CommonParameters>]
 ```
 
-To get the scripts information and examples inline run:
+Key parameters:
 
-```Powershell
+- `-DeviceId`: 40-character hexadecimal DeviceId.
+- `-UserPrincipalName` or `-upn`: user account to investigate.
+- `-TimeFrame` or `-t`: query timeframe (default `7d`).
+- `-IncludeSampleSet` or `-s`: include up to 10 sample rows per query in HTML reports.
+- `-VerboseOutput` or `-v`: print full query results in terminal.
+- `-Export` or `-e`: export query result tables to CSV.
+- `-AuthenticationMethod`: `User`, `ServicePrincipalSecret`, or `ServicePrincipalCertificate`.
+- `-AuthenticationTier`: `Tier1`, `Tier2`, or `Tier3`.
+- `-CertificateThumbprint`: optional thumbprint for certificate auth.
+
+To view help and examples:
+
+```powershell
 Get-Help .\KustoHawk.ps1
 ```
 
 ### Examples
 
+![Alt text](./Images/ExampleOutputDevice.png)
+
 **Example 1: Collecting Device and Idenity information with user authentication**
 
 ```PowerShell
-.\KustoHawk.ps1 -DeviceId 2694a7cc2225f3b66f7cf8b6388a78b1857fadca -upn user@contonso.com -AuthenticationMethod User
+.\KustoHawk.ps1 -DeviceId 2694a7cc2225f3b66f7cf8b6388a78b1857fadca -upn user@contonso.com -AuthenticationMethod User -AuthenticationTier Tier1
 ```
 
 **Example 2: Collecting Device information with csv exports enabled with a set timeframe of 14 days**
 
 ```PowerShell
-.\KustoHawk.ps1 -DeviceId 2694a7cc2225f3b66f7cf8b6388a78b1857fadca -AuthenticationMethod User -TimeFrame 14d -e
+.\KustoHawk.ps1 -DeviceId 2694a7cc2225f3b66f7cf8b6388a78b1857fadca -AuthenticationMethod User -TimeFrame 14d -e -AuthenticationTier Tier1
+```
+
+**Example 3: Collecting Idenity informationn with sample results and authentication methods (tier2) with a set timeframe of 14 days**
+
+```PowerShell
+.\KustoHawk.ps1 -upn bert-jan@kqlquery.com -AuthenticationTier Tier2 -TimeFrame 14d -IncludeSampleSet -AuthenticationMethod User
 ```
 
 ## Table Requirements
-To get results for all queries the tables below are required. It is no issue if you do not have all tables, it will result in less results.
+Missing tables do not break KustoHawk, but fewer detections are returned.
 
 ### Device Traige
 - Unified Security Platform Alerts (AlertEvidence, AlertInfo) 
@@ -103,3 +134,11 @@ AADUserRiskEvents
 $Output = $Query -replace '\r','\r' -replace '\n','\n'
 Write-Output $Output
 ```
+
+# Credits
+he queries of the authors below are used in KustoHawk.
+
+| Name | Source |
+| --- | --- |
+| @reprise99 | [Sentinel-Queries](https://github.com/reprise99/Sentinel-Queries) |
+| Kijo Girardi | [AiTM & BEC Threat Hunting with KQL](https://techcommunity.microsoft.com/blog/azuredataexplorer/aitm--bec-threat-hunting-with-kql/3885166) |

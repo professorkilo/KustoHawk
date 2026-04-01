@@ -1,0 +1,12 @@
+tiers:
+  tier1:
+    permissions:
+      - ThreatHunting.Read.All
+  tier2:
+    permissions:
+      - ThreatHunting.Read.All
+      - UserAuthenticationMethod.Read.All
+  tier3:
+    permissions:
+      - ThreatHunting.Read.All
+      - UserAuthenticationMethod.Read.All
